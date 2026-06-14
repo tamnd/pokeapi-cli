@@ -1,0 +1,10 @@
+title       = "pokeapi"
+baseURL     = "https://pokeapi-cli.tamnd.com/"
+description = "A command line for pokeapi."
+contentDir  = "content"
+outputDir   = "public"
+theme       = "tago-doks"
+syntaxHighlight = "true"
+
+[params]
+github = "https://github.com/tamnd/pokeapi-cli"
