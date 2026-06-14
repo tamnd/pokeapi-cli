@@ -53,6 +53,14 @@ func (Domain) Register(app *kit.App) {
 	}, listOp)
 
 	kit.Handle(app, kit.OpMeta{
+		Name:    "pokemon",
+		Group:   "read",
+		Single:  true,
+		Summary: "Get Pokémon info (types, stats, abilities)",
+		Args:    []kit.Arg{{Name: "name-or-id", Help: "Pokémon name (pikachu) or national number (25)"}},
+	}, getOp)
+
+	kit.Handle(app, kit.OpMeta{
 		Name:    "get",
 		Group:   "read",
 		Single:  true,
@@ -107,6 +115,14 @@ func (Domain) Register(app *kit.App) {
 		Summary: "Get item detail",
 		Args:    []kit.Arg{{Name: "name-or-id", Help: "item name or id (e.g. potion)"}},
 	}, itemOp)
+
+	kit.Handle(app, kit.OpMeta{
+		Name:    "berry",
+		Group:   "read",
+		Single:  true,
+		Summary: "Get berry detail",
+		Args:    []kit.Arg{{Name: "name-or-id", Help: "berry name or id (e.g. cheri)"}},
+	}, berryOp)
 }
 
 // newClient builds the client from host-resolved config.
@@ -235,6 +251,17 @@ func itemOp(ctx context.Context, in getInput, emit func(*Item) error) error {
 		return mapErr(err)
 	}
 	return emit(i)
+}
+
+func berryOp(ctx context.Context, in getInput, emit func(*Berry) error) error {
+	if in.NameOrID == "" {
+		return errs.Usage("name-or-id is required")
+	}
+	b, err := in.Client.GetBerry(ctx, in.NameOrID)
+	if err != nil {
+		return mapErr(err)
+	}
+	return emit(b)
 }
 
 // --- Resolver ---

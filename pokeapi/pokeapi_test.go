@@ -164,6 +164,20 @@ const fakeItemJSON = `{
   ]
 }`
 
+const fakeBerryJSON = `{
+  "id": 1,
+  "name": "cheri",
+  "growth_time": 3,
+  "max_harvest": 5,
+  "natural_gift_power": 60,
+  "size": 20,
+  "smoothness": 25,
+  "soil_dryness": 15,
+  "firmness": {"name": "soft", "url": "..."},
+  "flavors": [{"potency": 0, "flavor": {"name": "spicy", "url": "..."}}],
+  "natural_gift_type": {"name": "fire", "url": "..."}
+}`
+
 // --- helpers ---
 
 func newTestClient(ts *httptest.Server) *pokeapi.Client {
@@ -466,6 +480,40 @@ func TestGetGenerationParses(t *testing.T) {
 	}
 	if g.TypeCount != 2 {
 		t.Errorf("g.TypeCount = %d, want 2", g.TypeCount)
+	}
+}
+
+// --- berry tests ---
+
+func TestGetBerryParses(t *testing.T) {
+	ts := serve(fakeBerryJSON)
+	defer ts.Close()
+
+	c := newTestClient(ts)
+	b, err := c.GetBerry(context.Background(), "cheri")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.ID != 1 {
+		t.Errorf("b.ID = %d, want 1", b.ID)
+	}
+	if b.Name != "cheri" {
+		t.Errorf("b.Name = %q, want cheri", b.Name)
+	}
+	if b.GrowthTime != 3 {
+		t.Errorf("b.GrowthTime = %d, want 3", b.GrowthTime)
+	}
+	if b.MaxHarvest != 5 {
+		t.Errorf("b.MaxHarvest = %d, want 5", b.MaxHarvest)
+	}
+	if b.Firmness != "soft" {
+		t.Errorf("b.Firmness = %q, want soft", b.Firmness)
+	}
+	if b.GiftType != "fire" {
+		t.Errorf("b.GiftType = %q, want fire", b.GiftType)
+	}
+	if b.GiftPower != 60 {
+		t.Errorf("b.GiftPower = %d, want 60", b.GiftPower)
 	}
 }
 

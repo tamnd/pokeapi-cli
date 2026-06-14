@@ -90,6 +90,17 @@ type Item struct {
 	Effect     string `json:"effect"` // first English effect
 }
 
+// Berry is the berry detail from /berry.
+type Berry struct {
+	ID        int    `json:"id"          kit:"id"`
+	Name      string `json:"name"`
+	GrowthTime int   `json:"growth_time"`
+	MaxHarvest int   `json:"max_harvest"`
+	Firmness  string `json:"firmness"`
+	GiftType  string `json:"natural_gift_type"`
+	GiftPower int    `json:"natural_gift_power"`
+}
+
 // --- unexported wire types used for JSON decode only ---
 
 type listResponse struct {
@@ -214,6 +225,16 @@ type itemResponse struct {
 	FlingPower    int           `json:"fling_power"`
 	Category      nameURL       `json:"category"`
 	EffectEntries []effectEntry `json:"effect_entries"`
+}
+
+type berryResponse struct {
+	ID                int     `json:"id"`
+	Name              string  `json:"name"`
+	GrowthTime        int     `json:"growth_time"`
+	MaxHarvest        int     `json:"max_harvest"`
+	NaturalGiftPower  int     `json:"natural_gift_power"`
+	Firmness          nameURL `json:"firmness"`
+	NaturalGiftType   nameURL `json:"natural_gift_type"`
 }
 
 type nameURL struct {
