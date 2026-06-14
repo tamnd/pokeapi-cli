@@ -256,6 +256,28 @@ func (c *Client) GetGeneration(ctx context.Context, nameOrID string) (*Generatio
 	}, nil
 }
 
+// GetBerry fetches the berry record by name or id.
+func (c *Client) GetBerry(ctx context.Context, nameOrID string) (*Berry, error) {
+	u := fmt.Sprintf("%s/berry/%s", c.cfg.BaseURL, nameOrID)
+	body, err := c.get(ctx, u)
+	if err != nil {
+		return nil, err
+	}
+	var raw berryResponse
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, fmt.Errorf("decode berry: %w", err)
+	}
+	return &Berry{
+		ID:         raw.ID,
+		Name:       raw.Name,
+		GrowthTime: raw.GrowthTime,
+		MaxHarvest: raw.MaxHarvest,
+		Firmness:   raw.Firmness.Name,
+		GiftType:   raw.NaturalGiftType.Name,
+		GiftPower:  raw.NaturalGiftPower,
+	}, nil
+}
+
 // GetItem fetches the item record by name or id.
 func (c *Client) GetItem(ctx context.Context, nameOrID string) (*Item, error) {
 	u := fmt.Sprintf("%s/item/%s", c.cfg.BaseURL, nameOrID)
