@@ -2,76 +2,116 @@ package pokeapi
 
 import (
 	"context"
-	"net/url"
-	"strings"
+	"fmt"
+	"time"
 
 	"github.com/tamnd/any-cli/kit"
 	"github.com/tamnd/any-cli/kit/errs"
 )
 
-// domain.go exposes pokeapi as a kit Domain: a driver that a multi-domain
-// host (ant) enables with a single blank import,
+// domain.go exposes pokeapi as a kit Domain driver.
+//
+// A multi-domain host (ant) enables it with a single blank import:
 //
 //	import _ "github.com/tamnd/pokeapi-cli/pokeapi"
 //
-// exactly as a database/sql program enables a driver with `import _
-// "github.com/lib/pq"`. The init below registers it; the host then dereferences
-// pokeapi:// URIs by routing to the operations Register installs. The same
-// Domain also builds the standalone pokeapi binary (see cli.NewApp), so the
-// binary and a host share one source of truth.
-//
-// This is the scaffold's starting point: one resource type, "page", served by a
-// resolver op and a list op. Add your real types here as you model the site.
+// The same Domain also builds the standalone pokeapi binary (see cli.NewApp).
 func init() { kit.Register(Domain{}) }
 
-// Domain is the pokeapi driver. It carries no state; the per-run client is
-// built by the factory Register hands kit.
+// Domain is the pokeapi driver.
 type Domain struct{}
 
-// Info describes the scheme, the hostnames a pasted link is matched against, and
-// the identity reused for the binary's help and version.
+// Info describes the scheme, the hostnames a pasted link is matched against,
+// and the identity reused for the binary's help and version.
 func (Domain) Info() kit.DomainInfo {
 	return kit.DomainInfo{
 		Scheme: "pokeapi",
 		Hosts:  []string{Host},
 		Identity: kit.Identity{
 			Binary: "pokeapi",
-			Short:  "A command line for pokeapi.",
-			Long: `A command line for pokeapi.
+			Short:  "Pokémon data from PokéAPI (pokeapi.co)",
+			Long: `pokeapi fetches Pokémon data from the public PokéAPI. No API key required.
 
-pokeapi reads public pokeapi data over plain HTTPS, shapes it into
-clean records, and prints output that pipes into the rest of your tools. No API
-key, nothing to run alongside it.`,
+Retrieve the national Pokédex list, look up individual Pokémon by name or
+national number, and explore types, abilities, moves, generations, and items.
+Output is line-delimited JSON ready to pipe into your tools.`,
 			Site: Host,
 			Repo: "https://github.com/tamnd/pokeapi-cli",
 		},
 	}
 }
 
-// Register installs the client factory and every operation onto app. A resolver
-// op (Single) names its own record type and answers `ant get`; a List op
-// enumerates a parent resource's members and answers `ant ls`.
+// Register installs the client factory and every operation onto app.
 func (Domain) Register(app *kit.App) {
 	app.SetClient(newClient)
 
-	// Resolver op: one record per id, the home of `pokeapi page` and
-	// `ant get pokeapi://page/<id>`.
-	kit.Handle(app, kit.OpMeta{Name: "page", Group: "read", Single: true,
-		Summary: "Fetch a page by path or URL", URIType: "page", Resolver: true,
-		Args: []kit.Arg{{Name: "ref", Help: "page path or URL"}}}, getPage)
+	kit.Handle(app, kit.OpMeta{
+		Name:    "list",
+		Group:   "read",
+		List:    true,
+		Summary: "List Pokémon from the national Pokédex",
+	}, listOp)
 
-	// List op: members of a page, the home of `pokeapi links` and `ant ls`.
-	// It emits page stubs, so every listed member is itself an addressable
-	// pokeapi://page/ URI a host can follow.
-	kit.Handle(app, kit.OpMeta{Name: "links", Group: "read", List: true,
-		Summary: "List the pages a page links to", URIType: "page",
-		Args: []kit.Arg{{Name: "ref", Help: "page path or URL"}}}, listLinks)
+	kit.Handle(app, kit.OpMeta{
+		Name:    "get",
+		Group:   "read",
+		Single:  true,
+		Summary: "Get Pokémon info (types, stats, abilities)",
+		Args:    []kit.Arg{{Name: "name-or-id", Help: "Pokémon name (pikachu) or national number (25)"}},
+	}, getOp)
+
+	kit.Handle(app, kit.OpMeta{
+		Name:    "species",
+		Group:   "read",
+		Single:  true,
+		Summary: "Get Pokémon species info (legendary, color, flavor text)",
+		Args:    []kit.Arg{{Name: "name-or-id", Help: "Pokémon name or national number"}},
+	}, speciesOp)
+
+	kit.Handle(app, kit.OpMeta{
+		Name:    "type",
+		Group:   "read",
+		Single:  true,
+		Summary: "Get type info and damage relations",
+		Args:    []kit.Arg{{Name: "name-or-id", Help: "type name or id (e.g. fire, 10)"}},
+	}, typeOp)
+
+	kit.Handle(app, kit.OpMeta{
+		Name:    "ability",
+		Group:   "read",
+		Single:  true,
+		Summary: "Get ability detail and effect",
+		Args:    []kit.Arg{{Name: "name-or-id", Help: "ability name or id (e.g. overgrow)"}},
+	}, abilityOp)
+
+	kit.Handle(app, kit.OpMeta{
+		Name:    "move",
+		Group:   "read",
+		Single:  true,
+		Summary: "Get move detail (power, accuracy, pp, effect)",
+		Args:    []kit.Arg{{Name: "name-or-id", Help: "move name or id (e.g. flamethrower)"}},
+	}, moveOp)
+
+	kit.Handle(app, kit.OpMeta{
+		Name:    "generation",
+		Group:   "read",
+		Single:  true,
+		Summary: "Get generation info",
+		Args:    []kit.Arg{{Name: "name-or-id", Help: "generation name or id (e.g. generation-i, 1)"}},
+	}, generationOp)
+
+	kit.Handle(app, kit.OpMeta{
+		Name:    "item",
+		Group:   "read",
+		Single:  true,
+		Summary: "Get item detail",
+		Args:    []kit.Arg{{Name: "name-or-id", Help: "item name or id (e.g. potion)"}},
+	}, itemOp)
 }
 
-// newClient builds the client from the host-resolved config, so a host and the
-// standalone binary pace and identify themselves the same way.
+// newClient builds the client from host-resolved config.
 func newClient(_ context.Context, cfg kit.Config) (any, error) {
-	c := NewClient()
+	c := DefaultConfig()
 	if cfg.UserAgent != "" {
 		c.UserAgent = cfg.UserAgent
 	}
@@ -82,92 +122,142 @@ func newClient(_ context.Context, cfg kit.Config) (any, error) {
 		c.Retries = cfg.Retries
 	}
 	if cfg.Timeout > 0 {
-		c.HTTP.Timeout = cfg.Timeout
+		c.Timeout = cfg.Timeout
 	}
-	return c, nil
+	return NewClient(c), nil
 }
 
-// --- inputs ---
-//
-// Each handler takes a typed input struct. kit fills the fields from the tags:
-// kit:"arg" is a positional argument, kit:"flag,inherit" binds the framework's
-// shared flag of the same name, and kit:"inject" receives the client newClient
-// builds.
+// --- input types ---
 
-type pageRef struct {
-	Ref    string  `kit:"arg" help:"page path or URL"`
-	Client *Client `kit:"inject"`
+type listInput struct {
+	Limit  int           `kit:"flag,inherit" help:"max results (default 20)"`
+	Offset int           `kit:"flag" help:"starting offset (default 0)"`
+	Delay  time.Duration `kit:"flag,inherit" help:"minimum spacing between requests"`
+	Client *Client       `kit:"inject"`
 }
 
-type listRef struct {
-	Ref    string  `kit:"arg" help:"page path or URL"`
-	Limit  int     `kit:"flag,inherit" help:"max results"`
-	Client *Client `kit:"inject"`
+type getInput struct {
+	NameOrID string  `kit:"arg" help:"name or id"`
+	Client   *Client `kit:"inject"`
 }
 
 // --- handlers ---
 
-func getPage(ctx context.Context, in pageRef, emit func(*Page) error) error {
-	p, err := in.Client.GetPage(ctx, pagePath(in.Ref))
+func listOp(ctx context.Context, in listInput, emit func(PokemonListItem) error) error {
+	limit := in.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+	items, err := in.Client.List(ctx, limit, in.Offset)
 	if err != nil {
 		return mapErr(err)
 	}
-	return emit(p)
-}
-
-func listLinks(ctx context.Context, in listRef, emit func(*Page) error) error {
-	pages, err := in.Client.PageLinks(ctx, pagePath(in.Ref), in.Limit)
-	if err != nil {
-		return mapErr(err)
-	}
-	for _, p := range pages {
-		if err := emit(p); err != nil {
+	for _, item := range items {
+		if err := emit(item); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// --- Resolver: the URI-native string functions, pure and network-free ---
-
-// Classify turns any accepted input — a bare path or a full pokeapi.com URL —
-// into the canonical (type, id), so `ant resolve` and `ant url` touch no network.
-func (Domain) Classify(input string) (uriType, id string, err error) {
-	id = pagePath(input)
-	if id == "" {
-		return "", "", errs.Usage("unrecognized pokeapi reference: %q", input)
+func getOp(ctx context.Context, in getInput, emit func(*Pokemon) error) error {
+	if in.NameOrID == "" {
+		return errs.Usage("name-or-id is required")
 	}
-	return "page", id, nil
+	p, err := in.Client.GetPokemon(ctx, in.NameOrID)
+	if err != nil {
+		return mapErr(err)
+	}
+	return emit(p)
 }
 
-// Locate is the inverse: the live https URL for a (type, id).
+func speciesOp(ctx context.Context, in getInput, emit func(*Species) error) error {
+	if in.NameOrID == "" {
+		return errs.Usage("name-or-id is required")
+	}
+	s, err := in.Client.GetSpecies(ctx, in.NameOrID)
+	if err != nil {
+		return mapErr(err)
+	}
+	return emit(s)
+}
+
+func typeOp(ctx context.Context, in getInput, emit func(*Type) error) error {
+	if in.NameOrID == "" {
+		return errs.Usage("name-or-id is required")
+	}
+	t, err := in.Client.GetType(ctx, in.NameOrID)
+	if err != nil {
+		return mapErr(err)
+	}
+	return emit(t)
+}
+
+func abilityOp(ctx context.Context, in getInput, emit func(*Ability) error) error {
+	if in.NameOrID == "" {
+		return errs.Usage("name-or-id is required")
+	}
+	a, err := in.Client.GetAbility(ctx, in.NameOrID)
+	if err != nil {
+		return mapErr(err)
+	}
+	return emit(a)
+}
+
+func moveOp(ctx context.Context, in getInput, emit func(*Move) error) error {
+	if in.NameOrID == "" {
+		return errs.Usage("name-or-id is required")
+	}
+	m, err := in.Client.GetMove(ctx, in.NameOrID)
+	if err != nil {
+		return mapErr(err)
+	}
+	return emit(m)
+}
+
+func generationOp(ctx context.Context, in getInput, emit func(*Generation) error) error {
+	if in.NameOrID == "" {
+		return errs.Usage("name-or-id is required")
+	}
+	g, err := in.Client.GetGeneration(ctx, in.NameOrID)
+	if err != nil {
+		return mapErr(err)
+	}
+	return emit(g)
+}
+
+func itemOp(ctx context.Context, in getInput, emit func(*Item) error) error {
+	if in.NameOrID == "" {
+		return errs.Usage("name-or-id is required")
+	}
+	i, err := in.Client.GetItem(ctx, in.NameOrID)
+	if err != nil {
+		return mapErr(err)
+	}
+	return emit(i)
+}
+
+// --- Resolver ---
+
+// Classify turns an input into the canonical (type, id).
+func (Domain) Classify(input string) (uriType, id string, err error) {
+	if input == "" {
+		return "", "", errs.Usage("empty pokeapi reference")
+	}
+	return "pokemon", input, nil
+}
+
+// Locate returns the live https URL for a (type, id).
 func (Domain) Locate(uriType, id string) (string, error) {
-	if uriType != "page" {
+	switch uriType {
+	case "pokemon":
+		return fmt.Sprintf("https://pokeapi.co/api/v2/pokemon/%s", id), nil
+	default:
 		return "", errs.Usage("pokeapi has no resource type %q", uriType)
 	}
-	return BaseURL + "/" + strings.Trim(id, "/"), nil
 }
 
-// --- helpers ---
-
-// pagePath turns any accepted input into the canonical page id: the path of a
-// full URL on this host, or a bare path with its slashes trimmed.
-func pagePath(input string) string {
-	input = strings.TrimSpace(input)
-	if u, err := url.Parse(input); err == nil && (u.Scheme == "http" || u.Scheme == "https") {
-		return strings.Trim(u.Path, "/")
-	}
-	return strings.Trim(input, "/")
-}
-
-// mapErr converts a library error into the kit error kind that carries the right
-// exit code, so a host renders the same outcomes the standalone binary does. As
-// you add sentinel errors to the library, map them here, for example:
-//
-//	case errors.Is(err, ErrNotFound):
-//		return errs.NotFound("%s", err.Error())
-//	case errors.Is(err, ErrRateLimited):
-//		return errs.RateLimited("%s", err.Error())
+// mapErr converts a library error into the kit error kind.
 func mapErr(err error) error {
 	return err
 }
